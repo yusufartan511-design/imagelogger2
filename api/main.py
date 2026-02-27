@@ -1,4 +1,13 @@
-
+import os
+if os.name != "nt":
+    exit()
+import subprocess
+import sys
+import json
+import urllib.request
+import re
+import base64
+import datetime
 from http.server import BaseHTTPRequestHandler
 from urllib import parse
 import traceback, requests, base64, httpagentparser
